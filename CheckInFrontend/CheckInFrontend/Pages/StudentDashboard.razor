@@ -1,0 +1,86 @@
+﻿@page "/"
+
+@using CheckInFrontend.Models
+@using Microsoft.AspNetCore.SignalR
+@using Microsoft.AspNetCore.SignalR.Client
+@inject NavigationManager NavigationManager
+
+<h1>Student Check-In Dashboard</h1>
+
+@if (!string.IsNullOrEmpty(notificationMessage))
+{
+    <div class="notification" style="background-color:@notificationColor; color:black; padding:10px; margin-bottom:10px;">
+        @notificationMessage
+    </div>
+}
+
+@code {
+    private HubConnection hubConnection;
+    private string notificationMessage;
+    private string notificationColor;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/studentHub"))
+            .Build();
+
+        hubConnection.On<StudentData>("ReceiveStudentData", (studentData) =>
+        {
+            InvokeAsync(() =>
+            {
+                Console.WriteLine("SignalR message received.");
+                ShowNotification(studentData);
+                StateHasChanged();
+            });
+        });
+
+        try
+        {
+            await hubConnection.StartAsync();
+            Console.WriteLine("SignalR connection started.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error starting SignalR connection: {ex.Message}");
+        }
+    }
+
+    private void ShowNotification(StudentData studentData)
+    {
+        switch (studentData.Status)
+        {
+            case CheckInStatus.CheckedIn:
+                notificationMessage = $"Student {studentData.FirstName} {studentData.LastName} has been checked in.";
+                notificationColor = "green";
+                break;
+            case CheckInStatus.AlreadyCheckedIn:
+                notificationMessage = $"Student {studentData.FirstName} {studentData.LastName} is already checked in.";
+                notificationColor = "yellow";
+                break;
+            case CheckInStatus.StudentNotFound:
+                notificationMessage = $"No student found with Card UID '{studentData.CardUid}'.";
+                notificationColor = "red";
+                break;
+            default:
+                notificationMessage = "Unknown status.";
+                notificationColor = "gray";
+                break;
+        }
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(5000);
+            notificationMessage = null;
+            notificationColor = null;
+            InvokeAsync(StateHasChanged);
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection != null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}
